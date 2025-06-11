@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5><i class="bi bi-bar-chart"></i> Wydatki miesięczne</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="monthlyExpensesChart"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5><i class="bi bi-download"></i> Eksport danych</h5>
+            </div>
+            <div class="card-body">
+                <p>Wybierz format eksportu:</p>
+                <div class="d-grid gap-2">
+                    <a href="{{ url_for('export', format='csv') }}" class="btn btn-outline-success">
+                        <i class="bi bi-file-earmark-spreadsheet"></i> Eksport do CSV
+                    </a>
+                    <a href="{{ url_for('export', format='pdf') }}" class="btn btn-outline-danger">
+                        <i class="bi bi-file-earmark-pdf"></i> Eksport do PDF
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const monthlyCtx = document.getElementById('monthlyExpensesChart').getContext('2d');
+    const monthlyExpensesChart = new Chart(monthlyCtx, {
+        type: 'bar',
+        data: {
+            labels: {{ months|tojson }},
+            datasets: [{
+                label: 'Wydatki miesięczne (zł)',
+                data: {{ monthly_totals|tojson }},
+                backgroundColor: '#36A2EB',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: {
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+</script>
+{% endblock %}

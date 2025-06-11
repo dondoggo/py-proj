@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-4 mb-4">
+        <div class="card bg-success text-white h-100">
+            <div class="card-body">
+                <h5 class="card-title"><i class="bi bi-arrow-down-circle"></i> Przychody</h5>
+                <h2 class="card-text">{{ "%.2f"|format(income) }} zł</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 mb-4">
+        <div class="card bg-danger text-white h-100">
+            <div class="card-body">
+                <h5 class="card-title"><i class="bi bi-arrow-up-circle"></i> Wydatki</h5>
+                <h2 class="card-text">{{ "%.2f"|format(expenses) }} zł</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 mb-4">
+        <div class="card bg-info text-white h-100">
+            <div class="card-body">
+                <h5 class="card-title"><i class="bi bi-wallet2"></i> Bilans</h5>
+                <h2 class="card-text">{{ "%.2f"|format(balance) }} zł</h2>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5><i class="bi bi-pie-chart"></i> Wydatki według kategorii</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="categoryChart"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5><i class="bi bi-clock-history"></i> Ostatnie transakcje</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Data</th>
+                                <th>Kwota</th>
+                                <th>Kategoria</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for transaction in recent_transactions %}
+                            <tr class="{{ 'table-success' if transaction.type == 'income' else 'table-danger' }}">
+                                <td>{{ transaction.date.strftime('%d.%m.%Y') }}</td>
+                                <td>{{ "%.2f"|format(transaction.amount) }} zł</td>
+                                <td>{{ transaction.category_ref.name }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const ctx = document.getElementById('categoryChart').getContext('2d');
+    const categoryChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: {{ categories|tojson }},
+            datasets: [{
+                data: {{ amounts|tojson }},
+                backgroundColor: [
+                    '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', 
+                    '#9966FF', '#FF9F40', '#8AC24A', '#607D8B'
+                ],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'right',
+                }
+            }
+        }
+    });
+</script>
+{% endblock %}

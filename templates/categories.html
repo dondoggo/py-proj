@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5><i class="bi bi-plus-circle"></i> Dodaj nową kategorię</h5>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Nazwa kategorii</label>
+                        <input type="text" class="form-control" id="name" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="description" class="form-label">Opis (opcjonalny)</label>
+                        <textarea class="form-control" id="description" name="description" rows="3"></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Zapisz kategorię</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5><i class="bi bi-tags"></i> Twoje kategorie</h5>
+            </div>
+            <div class="card-body">
+                {% if categories %}
+                <div class="list-group">
+                    {% for category in categories %}
+                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="mb-1">{{ category.name }}</h6>
+                            <small class="text-muted">{{ category.description|default('Brak opisu', true) }}</small>
+                        </div>
+                        <div>
+                            <button class="btn btn-sm btn-outline-primary me-1"><i class="bi bi-pencil"></i></button>
+                            <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="alert alert-info">
+                    Nie masz jeszcze żadnych kategorii. Dodaj pierwszą kategorię używając formularza obok.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
