@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-6 mb-4">
+    <div class="card">
+      <div class="card-header">
+        <h5><i class="bi bi-pencil-square"></i> Edytuj kategorię</h5>
+      </div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('edit_category', id=category.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="mb-3">
+            <label for="name" class="form-label">Nazwa kategorii</label>
+            <input type="text"
+                   id="name"
+                   name="name"
+                   class="form-control"
+                   value="{{ category.name }}"
+                   required>
+          </div>
+          <div class="mb-3">
+            <label for="description" class="form-label">Opis (opcjonalny)</label>
+            <textarea id="description"
+                      name="description"
+                      class="form-control"
+                      rows="3">{{ category.description }}</textarea>
+          </div>
+          <button type="submit" class="btn btn-success">
+            <i class="bi bi-check-circle"></i> Zapisz zmiany
+          </button>
+          <a href="{{ url_for('categories') }}" class="btn btn-secondary ms-2">
+            Anuluj
+          </a>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

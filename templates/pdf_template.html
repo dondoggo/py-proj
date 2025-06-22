@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <title>Lista transakcji</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 20mm;
+        }
+
+        body {
+            font-family: DejaVuSans, sans-serif;
+            font-size: 10pt;
+            color: #333;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .balance {
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+
+        .transaction {
+            border: 1px solid #999;
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 5px;
+            page-break-inside: avoid;
+        }
+
+        .transaction h3 {
+            margin: 0 0 8px 0;
+            font-size: 11pt;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 4px;
+        }
+
+        .field {
+            margin: 4px 0;
+        }
+
+        .label {
+            font-weight: bold;
+            display: inline-block;
+            width: 100px;
+        }
+
+        .value {
+            display: inline-block;
+            max-width: 500px;
+            word-wrap: break-word;
+            vertical-align: top;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Lista transakcji</h1>
+<p class="balance">Saldo: {{ "%.2f"|format(balance) }} PLN</p>
+
+{% for tx in transactions %}
+<div class="transaction">
+    <h3>Transakcja {{ loop.index }}</h3>
+    <div class="field"><span class="label">Data:</span> <span class="value">{{ tx.date.strftime('%Y-%m-%d') }}</span></div>
+    <div class="field"><span class="label">Typ:</span> <span class="value">{{ tx.type }}</span></div>
+    <div class="field"><span class="label">Kwota:</span> <span class="value">{{ "%.2f"|format(tx.amount) }} PLN</span></div>
+    <div class="field"><span class="label">Kategoria:</span> <span class="value">{{ tx.category_ref.name }}</span></div>
+    <div class="field"><span class="label">Opis:</span> <span class="value">{{ tx.description or '—' }}</span></div>
+</div>
+{% endfor %}
+
+</body>
+</html>

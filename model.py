@@ -7,8 +7,20 @@ class User(db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False)
     password = db.Column(db.String(256), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    transactions = db.relationship('Transaction', backref='user', lazy=True, cascade="all, delete-orphan")
-    categories = db.relationship('Category', backref='user', lazy=True, cascade="all, delete-orphan")
+
+    transactions = db.relationship(
+        'Transaction',
+        backref='user',
+        lazy=True,
+        cascade="all, delete-orphan"
+    )
+
+    categories = db.relationship(
+        'Category',
+        backref='user',
+        lazy=True,
+        cascade="all, delete-orphan"
+    )
 
     def set_password(self, password):
         self.password = generate_password_hash(password)
@@ -16,12 +28,20 @@ class User(db.Model):
     def check_password(self, password):
         return check_password_hash(self.password, password)
 
+    def __repr__(self):
+        return f'<User {self.email}>'
+
 class Category(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(50), nullable=False)
     description = db.Column(db.String(200))
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    transactions = db.relationship('Transaction', backref='category_ref', lazy=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='CASCADE'), nullable=False)
+
+    transactions = db.relationship(
+        'Transaction',
+        backref='category_ref',
+        lazy=True
+    )
 
     def __repr__(self):
         return f'<Category {self.name}>'
@@ -32,8 +52,9 @@ class Transaction(db.Model):
     amount = db.Column(db.Float, nullable=False)
     date = db.Column(db.Date, nullable=False)
     description = db.Column(db.String(200))
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    category_id = db.Column(db.Integer, db.ForeignKey('category.id'), nullable=False)
+
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='CASCADE'), nullable=False, index=True)
+    category_id = db.Column(db.Integer, db.ForeignKey('category.id', ondelete='CASCADE'), nullable=False, index=True)
 
     def __repr__(self):
-        return f'<Transaction {self.amount} {self.type} on {self.date}>'
+        return f'<Transaction {self.amount:.2f} {self.type} on {self.date}>'

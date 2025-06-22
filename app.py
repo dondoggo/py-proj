@@ -1,40 +1,39 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, session, Response
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
+from flask_wtf.csrf import CSRFProtect
 from datetime import datetime
 from functools import wraps
-import os
+import csv
+import io
+import re
+from xhtml2pdf import pisa
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-here'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///finance.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
 db = SQLAlchemy(app)
-
-
-# Login required decorator
-def login_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'user_id' not in session:
-            flash('Proszę się zalogować, aby uzyskać dostęp do tej strony.', 'danger')
-            return redirect(url_for('login'))
-        return f(*args, **kwargs)
-
-    return decorated_function
-
+csrf = CSRFProtect(app)
 
 from model import User, Category, Transaction
 
+def login_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if 'user_id' not in session:
+            flash("Zaloguj się", "danger")
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return wrapper
 
 @app.route('/')
 @login_required
 def dashboard():
-    # Get current month and year
     current_month = datetime.now().month
     current_year = datetime.now().year
 
-    # Calculate total income and expenses for the current month
     income = db.session.query(db.func.sum(Transaction.amount)).filter(
         Transaction.user_id == session['user_id'],
         Transaction.type == 'income',
@@ -51,15 +50,10 @@ def dashboard():
 
     balance = income - expenses
 
-    # Get recent transactions
-    recent_transactions = Transaction.query.filter_by(
-        user_id=session['user_id']
-    ).order_by(Transaction.date.desc()).limit(5).all()
+    recent_transactions = Transaction.query.filter_by(user_id=session['user_id']).order_by(Transaction.date.desc()).limit(5).all()
 
-    # Get expenses by category for the current month
     expenses_by_category = db.session.query(
-        Category.name,
-        db.func.sum(Transaction.amount)
+        Category.name, db.func.sum(Transaction.amount)
     ).join(Transaction).filter(
         Transaction.user_id == session['user_id'],
         Transaction.type == 'expense',
@@ -67,89 +61,140 @@ def dashboard():
         db.func.strftime('%Y', Transaction.date) == str(current_year)
     ).group_by(Category.name).all()
 
-    # Prepare data for charts
-    categories = [category[0] for category in expenses_by_category]
-    amounts = [float(category[1]) for category in expenses_by_category]
+    categories = [c[0] for c in expenses_by_category]
+    amounts = [float(c[1]) for c in expenses_by_category]
 
-    return render_template('dashboard.html',
-                           income=income,
-                           expenses=expenses,
-                           balance=balance,
-                           recent_transactions=recent_transactions,
-                           categories=categories,
-                           amounts=amounts)
-
+    return render_template('dashboard.html', income=income, expenses=expenses, balance=balance,
+                           recent_transactions=recent_transactions, categories=categories, amounts=amounts)
 
 @app.route('/transactions', methods=['GET', 'POST'])
 @login_required
 def transactions():
     if request.method == 'POST':
-        type = request.form.get('type')
-        amount = float(request.form.get('amount'))
-        category_id = int(request.form.get('category'))
-        date = datetime.strptime(request.form.get('date'), '%Y-%m-%d').date()
-        description = request.form.get('description', '')
-
-        new_transaction = Transaction(
-            type=type,
-            amount=amount,
-            category_id=category_id,
-            date=date,
-            description=description,
+        tx = Transaction(
+            type=request.form['type'],
+            amount=float(request.form['amount']),
+            category_id=int(request.form['category']),
+            date=datetime.strptime(request.form['date'], '%Y-%m-%d'),
+            description=request.form.get('description', ''),
             user_id=session['user_id']
         )
-
-        db.session.add(new_transaction)
+        db.session.add(tx)
         db.session.commit()
-
-        flash('Transakcja została dodana pomyślnie!', 'success')
+        flash('Dodano transakcję', 'success')
         return redirect(url_for('transactions'))
 
-    # Get all transactions for the user
-    user_transactions = Transaction.query.filter_by(
-        user_id=session['user_id']
-    ).order_by(Transaction.date.desc()).all()
+    filters = {
+        'type': request.args.get('type', ''),
+        'category': request.args.get('category', ''),
+        'date_from': request.args.get('date_from', ''),
+        'date_to': request.args.get('date_to', '')
+    }
 
-    # Get all categories for the dropdown
-    categories = Category.query.filter_by(user_id=session['user_id']).all()
+    query = Transaction.query.filter_by(user_id=session['user_id'])
 
-    return render_template('transactions.html',
-                           transactions=user_transactions,
-                           categories=categories,
-                           datetime=datetime)  # <—— TO JEST KLUCZOWE
+    if filters['type']:
+        query = query.filter_by(type=filters['type'])
+    if filters['category']:
+        query = query.filter_by(category_id=int(filters['category']))
+    if filters['date_from']:
+        query = query.filter(Transaction.date >= filters['date_from'])
+    if filters['date_to']:
+        query = query.filter(Transaction.date <= filters['date_to'])
 
+    txs = query.order_by(Transaction.date.desc()).all()
+    cats = Category.query.filter_by(user_id=session['user_id']).all()
+
+    return render_template('transactions.html', transactions=txs, categories=cats, filters=filters, datetime=datetime)
+
+@app.route('/transactions/<int:id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_transaction(id):
+    tx = Transaction.query.get_or_404(id)
+    if tx.user_id != session['user_id']:
+        flash('Brak uprawnień', 'danger')
+        return redirect(url_for('transactions'))
+
+    if request.method == 'POST':
+        tx.type = request.form['type']
+        tx.amount = float(request.form['amount'])
+        tx.category_id = int(request.form['category'])
+        tx.date = datetime.strptime(request.form['date'], '%Y-%m-%d')
+        tx.description = request.form.get('description', '')
+        db.session.commit()
+        flash('Transakcja zaktualizowana', 'success')
+        return redirect(url_for('transactions'))
+
+    cats = Category.query.filter_by(user_id=session['user_id']).all()
+    return render_template('edit_transaction.html', transaction=tx, categories=cats)
+
+@app.route('/delete_transaction/<int:id>', methods=['POST'])
+@login_required
+def delete_transaction(id):
+    tx = Transaction.query.get_or_404(id)
+    if tx.user_id != session['user_id']:
+        flash('Brak uprawnień', 'danger')
+    else:
+        db.session.delete(tx)
+        db.session.commit()
+        flash('Usunięto transakcję', 'success')
+    return redirect(url_for('transactions'))
 
 @app.route('/categories', methods=['GET', 'POST'])
 @login_required
 def categories():
     if request.method == 'POST':
-        name = request.form.get('name')
-        description = request.form.get('description', '')
-
-        new_category = Category(
-            name=name,
-            description=description,
+        cat = Category(
+            name=request.form['name'],
+            description=request.form.get('description', ''),
             user_id=session['user_id']
         )
-
-        db.session.add(new_category)
+        db.session.add(cat)
         db.session.commit()
-
-        flash('Kategoria została dodana pomyślnie!', 'success')
+        flash('Dodano kategorię', 'success')
         return redirect(url_for('categories'))
 
-    user_categories = Category.query.filter_by(
-        user_id=session['user_id']
-    ).all()
+    user_cats = Category.query.filter_by(user_id=session['user_id']).all()
+    return render_template('categories.html', categories=user_cats)
 
-    return render_template('categories.html', categories=user_categories)
+@app.route('/categories/<int:id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_category(id):
+    category = Category.query.get_or_404(id)
+    if category.user_id != session['user_id']:
+        flash('Brak dostępu', 'danger')
+        return redirect(url_for('categories'))
 
+    if request.method == 'POST':
+        category.name = request.form['name']
+        category.description = request.form.get('description', '')
+        db.session.commit()
+        flash('Zaktualizowano kategorię', 'success')
+        return redirect(url_for('categories'))
+
+    return render_template('edit_category.html', category=category)
+
+@app.route('/delete_category/<int:id>', methods=['POST'])
+@login_required
+def delete_category(id):
+    category = Category.query.get_or_404(id)
+    if category.user_id != session['user_id']:
+        flash('Brak dostępu', 'danger')
+        return redirect(url_for('categories'))
+
+    if category.transactions:
+        flash('Nie można usunąć kategorii z przypisanymi transakcjami', 'danger')
+        return redirect(url_for('categories'))
+
+    db.session.delete(category)
+    db.session.commit()
+    flash('Usunięto kategorię', 'success')
+    return redirect(url_for('categories'))
 
 @app.route('/reports')
 @login_required
 def reports():
-    # Get data for monthly expenses chart
-    monthly_expenses = db.session.query(
+    monthly = db.session.query(
         db.func.strftime('%Y-%m', Transaction.date).label('month'),
         db.func.sum(Transaction.amount).label('total')
     ).filter(
@@ -157,114 +202,110 @@ def reports():
         Transaction.type == 'expense'
     ).group_by('month').order_by('month').all()
 
-    months = [expense.month for expense in monthly_expenses]
-    monthly_totals = [float(expense.total) for expense in monthly_expenses]
+    months = [m.month for m in monthly]
+    totals = [float(m.total) for m in monthly]
 
-    return render_template('reports.html',
-                           months=months,
-                           monthly_totals=monthly_totals)
-
+    return render_template('reports.html', months=months, monthly_totals=totals)
 
 @app.route('/export/<format>')
 @login_required
 def export(format):
-    flash(f'Eksport do {format.upper()} nie jest jeszcze zaimplementowany.', 'info')
-    return redirect(url_for('dashboard'))
+    txs = Transaction.query.filter_by(user_id=session['user_id']).order_by(Transaction.date.desc()).all()
+    balance = sum(t.amount if t.type == 'income' else -t.amount for t in txs)
 
+    if format == 'csv':
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(['Data', 'Typ', 'Kwota', 'Kategoria', 'Opis'])
+        for tx in txs:
+            writer.writerow([
+                tx.date.strftime('%Y-%m-%d'),
+                tx.type,
+                f"{tx.amount:.2f}",
+                tx.category_ref.name,
+                tx.description or ''
+            ])
+        output.seek(0)
+        return Response(output.getvalue(), mimetype='text/csv',
+                        headers={"Content-Disposition": "attachment; filename=transakcje.csv"})
+
+    elif format == 'pdf':
+        rendered = render_template('pdf_template.html', transactions=txs, balance=balance)
+        pdf_io = io.BytesIO()
+        pisa_status = pisa.CreatePDF(io.StringIO(rendered), dest=pdf_io)
+        if pisa_status.err:
+            flash('Błąd podczas generowania PDF', 'danger')
+            return redirect(url_for('dashboard'))
+        pdf_io.seek(0)
+        return Response(pdf_io.read(), mimetype='application/pdf',
+                        headers={"Content-Disposition": "attachment; filename=transakcje.pdf"})
+
+    flash('Nieobsługiwany format eksportu', 'danger')
+    return redirect(url_for('dashboard'))
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        email = request.form.get('email')
-        password = request.form.get('password')
-
+        email = request.form['email']
+        pwd = request.form['password']
         user = User.query.filter_by(email=email).first()
-
-        if user and user.check_password(password):
+        if user and user.check_password(pwd):
             session['user_id'] = user.id
             session['email'] = user.email
-            flash('Zalogowano pomyślnie!', 'success')
+            flash('Zalogowano', 'success')
             return redirect(url_for('dashboard'))
         else:
-            flash('Nieprawidłowy email lub hasło.', 'danger')
-
+            flash('Błędne dane', 'danger')
     return render_template('login.html')
-
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
-        email = request.form.get('email')
-        password = request.form.get('password')
-        confirm_password = request.form.get('confirm_password')
+        email = request.form.get('email', '').strip()
+        pwd = request.form.get('password', '').strip()
+        pwd2 = request.form.get('confirm_password', '').strip()
 
-        if password != confirm_password:
-            flash('Hasła nie są identyczne!', 'danger')
+        if not email or not pwd or not pwd2:
+            flash('Wszystkie pola są wymagane.', 'danger')
             return redirect(url_for('register'))
 
-        existing_user = User.query.filter_by(email=email).first()
-        if existing_user:
-            flash('Użytkownik o podanym emailu już istnieje!', 'danger')
+        email_regex = r'^[\w\.-]+@[\w\.-]+\.\w+$'
+        if not re.match(email_regex, email):
+            flash('Niepoprawny adres e-mail.', 'danger')
             return redirect(url_for('register'))
 
-        new_user = User(email=email)
-        new_user.set_password(password)
+        if len(pwd) < 6:
+            flash('Hasło musi mieć co najmniej 6 znaków.', 'danger')
+            return redirect(url_for('register'))
 
-        db.session.add(new_user)
+        if pwd != pwd2:
+            flash('Hasła nie są zgodne.', 'danger')
+            return redirect(url_for('register'))
+
+        if User.query.filter_by(email=email).first():
+            flash('Ten adres e-mail jest już zarejestrowany.', 'danger')
+            return redirect(url_for('register'))
+
+        user = User(email=email)
+        user.set_password(pwd)
+        db.session.add(user)
         db.session.commit()
-
-        flash('Rejestracja zakończona pomyślnie! Możesz się teraz zalogować.', 'success')
+        flash('Rejestracja zakończona sukcesem.', 'success')
         return redirect(url_for('login'))
 
     return render_template('register.html')
-
-
+@app.route('/settings')
+@login_required
+def settings():
+    return render_template('settings.html')
 @app.route('/logout')
 @login_required
 def logout():
     session.clear()
-    flash('Wylogowano pomyślnie!', 'success')
+    flash('Wylogowano', 'success')
     return redirect(url_for('login'))
 
-
-@app.route('/delete_transaction/<int:id>', methods=['POST'])
-@login_required
-def delete_transaction(id):
-    transaction = Transaction.query.get_or_404(id)
-    if transaction.user_id != session['user_id']:
-        flash('Nie masz uprawnień do usunięcia tej transakcji', 'danger')
-        return redirect(url_for('transactions'))
-
-    db.session.delete(transaction)
-    db.session.commit()
-    flash('Transakcja została usunięta', 'success')
-    return redirect(url_for('transactions'))
-
-
-@app.route('/delete_category/<int:id>', methods=['POST'])
-@login_required
-def delete_category(id):
-    category = Category.query.get_or_404(id)
-    if category.user_id != session['user_id']:
-        flash('Nie masz uprawnień do usunięcia tej kategorii', 'danger')
-        return redirect(url_for('categories'))
-
-    # Check if category is used in transactions
-    if Transaction.query.filter_by(category_id=id).count() > 0:
-        flash('Nie można usunąć kategorii, ponieważ jest używana w transakcjach', 'danger')
-        return redirect(url_for('categories'))
-
-    db.session.delete(category)
-    db.session.commit()
-    flash('Kategoria została usunięta', 'success')
-    return redirect(url_for('categories'))
-
-
 if __name__ == '__main__':
-    from model import User, Category, Transaction  # ← TO JEST KLUCZOWE
-
     with app.app_context():
-        print(">>> Tworzę tabele...")
         db.create_all()
-        print(">>> Gotowe.")
     app.run(debug=True)

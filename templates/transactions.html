@@ -1,91 +1,143 @@
 {% extends "base.html" %}
-
 {% block content %}
-<div class="card mb-4">
-    <div class="card-header">
-        <h5><i class="bi bi-plus-circle"></i> Dodaj nową transakcję</h5>
-    </div>
-    <div class="card-body">
-        <form method="POST">
-            <div class="row g-3">
-                <div class="col-md-3">
-                    <label for="type" class="form-label">Typ transakcji</label>
-                    <select class="form-select" id="type" name="type" required>
-                        <option value="income">Przychód</option>
-                        <option value="expense">Wydatek</option>
-                    </select>
-                </div>
-                <div class="col-md-3">
-                    <label for="amount" class="form-label">Kwota (zł)</label>
-                    <input type="number" step="0.01" class="form-control" id="amount" name="amount" required>
-                </div>
-                <div class="col-md-3">
-                    <label for="category" class="form-label">Kategoria</label>
-                    <select class="form-select" id="category" name="category" required>
-                        {% for category in categories %}
-                        <option value="{{ category.id }}">{{ category.name }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="col-md-3">
-                    <label for="date" class="form-label">Data</label>
-                    <input type="date" class="form-control" id="date" name="date" required value="{{ datetime.now().strftime('%Y-%m-%d') }}">
-                </div>
-                <div class="col-12">
-                    <label for="description" class="form-label">Opis (opcjonalny)</label>
-                    <textarea class="form-control" id="description" name="description" rows="2"></textarea>
-                </div>
-                <div class="col-12">
-                    <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Zapisz transakcję</button>
-                </div>
-            </div>
-        </form>
-    </div>
-</div>
 
-{% if transactions %}
-<div class="card">
-    <div class="card-header">
-        <h5><i class="bi bi-list-ul"></i> Historia transakcji</h5>
-    </div>
-    <div class="card-body">
-        <div class="table-responsive">
-            <table class="table table-hover">
-                <thead>
-                    <tr>
-                        <th>Data</th>
-                        <th>Typ</th>
-                        <th>Kwota</th>
-                        <th>Kategoria</th>
-                        <th>Opis</th>
-                        <th>Akcje</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for transaction in transactions %}
-                    <tr>
-                        <td>{{ transaction.date.strftime('%d.%m.%Y') }}</td>
-                        <td>
-                            <span class="badge bg-{{ 'success' if transaction.type == 'income' else 'danger' }}">
-                                {{ 'Przychód' if transaction.type == 'income' else 'Wydatek' }}
-                            </span>
-                        </td>
-                        <td>{{ "%.2f"|format(transaction.amount) }} zł</td>
-                        <td>{{ transaction.category_ref.name }}</td>
-                        <td>{{ transaction.description | default('—', true) }}</td>
-                        <td>
-                            <form method="POST" action="{{ url_for('delete_transaction', id=transaction.id) }}" style="display:inline;">
-                                <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Na pewno chcesz usunąć tę transakcję?')">
-                                    <i class="bi bi-trash"></i>
-                                </button>
-                            </form>
-                        </td>
-                    </tr>
+    <form method="GET" class="card card-body mb-4">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-2">
+                <label for="type" class="form-label">Typ</label>
+                <select name="type" id="type" class="form-select">
+                    <option value="">Wszystkie</option>
+                    <option value="income" {% if filters.type == 'income' %}selected{% endif %}>Przychód</option>
+                    <option value="expense" {% if filters.type == 'expense' %}selected{% endif %}>Wydatek</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label for="category" class="form-label">Kategoria</label>
+                <select name="category" id="category" class="form-select">
+                    <option value="">Wszystkie</option>
+                    {% for cat in categories %}
+                        <option value="{{ cat.id }}"
+                                {% if filters.category and filters.category|int == cat.id %}selected{% endif %}>{{ cat.name }}</option>
                     {% endfor %}
-                </tbody>
-            </table>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label for="date_from" class="form-label">Data od</label>
+                <input type="date" name="date_from" id="date_from" class="form-control" value="{{ filters.date_from }}">
+            </div>
+            <div class="col-md-2">
+                <label for="date_to" class="form-label">Data do</label>
+                <input type="date" name="date_to" id="date_to" class="form-control" value="{{ filters.date_to }}">
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary w-100"><i class="bi bi-funnel"></i> Filtruj</button>
+            </div>
+            <div class="col-md-2">
+                <a href="{{ url_for('transactions') }}" class="btn btn-outline-secondary w-100"><i
+                        class="bi bi-x-circle"></i> Wyczyść</a>
+            </div>
+        </div>
+    </form>
+
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5><i class="bi bi-plus-circle"></i> Dodaj nową transakcję</h5>
+        </div>
+        <div class="card-body">
+            <form method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <label for="type" class="form-label">Typ transakcji</label>
+                        <select class="form-select" id="type" name="type" required>
+                            <option value="income">Przychód</option>
+                            <option value="expense">Wydatek</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="amount" class="form-label">Kwota (zł)</label>
+                        <input type="number" step="0.01" class="form-control" id="amount" name="amount" required>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="category" class="form-label">Kategoria</label>
+                        <select class="form-select" id="category" name="category" required>
+                            {% for category in categories %}
+                                <option value="{{ category.id }}">{{ category.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="date" class="form-label">Data</label>
+                        <input type="date" class="form-control" id="date" name="date" required
+                               value="{{ datetime.now().strftime('%Y-%m-%d') }}">
+                    </div>
+                    <div class="col-12">
+                        <label for="description" class="form-label">Opis (opcjonalny)</label>
+                        <textarea class="form-control" id="description" name="description" rows="2"></textarea>
+                    </div>
+                    <div class="col-12">
+                        <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Zapisz transakcję
+                        </button>
+                    </div>
+                </div>
+            </form>
         </div>
     </div>
-</div>
-{% endif %}
+
+    {% if transactions %}
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="bi bi-list-ul"></i> Historia transakcji</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                        <tr>
+                            <th>Data</th>
+                            <th>Typ</th>
+                            <th>Kwota</th>
+                            <th>Kategoria</th>
+                            <th>Opis</th>
+                            <th>Akcje</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {% for transaction in transactions %}
+                            <tr>
+                                <td>{{ transaction.date.strftime('%d.%m.%Y') }}</td>
+                                <td>
+              <span class="badge bg-{{ 'success' if transaction.type == 'income' else 'danger' }}">
+                {{ 'Przychód' if transaction.type == 'income' else 'Wydatek' }}
+              </span>
+                                </td>
+                                <td>{{ "%.2f"|format(transaction.amount) }} zł</td>
+                                <td>{{ transaction.category_ref.name }}</td>
+                                <td>{{ transaction.description or '—' }}</td>
+                                <td>
+                                    <div class="btn-group">
+                                        <a href="{{ url_for('edit_transaction', id=transaction.id) }}"
+                                           class="btn btn-sm btn-outline-primary">
+                                            <i class="bi bi-pencil"></i>
+                                        </a>
+                                        <form method="POST"
+                                              action="{{ url_for('delete_transaction', id=transaction.id) }}"
+                                              style="display:inline;">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger"
+                                                    onclick="return confirm('Na pewno chcesz usunąć tę transakcję?')">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+
 {% endblock %}
